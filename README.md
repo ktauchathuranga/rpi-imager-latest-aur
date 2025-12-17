@@ -53,7 +53,7 @@ makepkg -si
 
 Follow these steps to contribute or update the AUR package:
 
-### 1️⃣ Clone the AUR repository
+### Clone the AUR repository
 
 ```bash
 git clone ssh://aur@aur.archlinux.org/rpi-imager-latest.git
@@ -64,7 +64,7 @@ cd rpi-imager-latest
 
 ---
 
-### 2️⃣ Add remotes for AUR and GitHub
+### Add remotes for AUR and GitHub
 
 If you want to push to **both AUR and GitHub**, set up two remotes:
 
@@ -93,7 +93,7 @@ github  git@github.com:ktauchathuranga/rpi-imager-latest-aur.git (push)
 
 ---
 
-### 3️⃣ Update PKGBUILD
+### Update PKGBUILD
 
 * Change `pkgver` to the new version
 * Update `source` URL if upstream release changed
@@ -111,7 +111,7 @@ makepkg -si
 
 ---
 
-### 4️⃣ Commit changes
+### Commit changes
 
 ```bash
 git add PKGBUILD .SRCINFO
@@ -120,7 +120,7 @@ git commit -m "Update rpi-imager to 2.x.x"
 
 ---
 
-### 5️⃣ Push to AUR
+### Push to AUR
 
 ```bash
 git push origin master
@@ -128,7 +128,7 @@ git push origin master
 
 ---
 
-### 6️⃣ Push to GitHub
+### Push to GitHub
 
 ```bash
 git push github master
