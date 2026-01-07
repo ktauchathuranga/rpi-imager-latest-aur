@@ -2,8 +2,8 @@ name: Auto-Update AUR Package
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Runs daily at midnight
-  workflow_dispatch: # Allows manual trigger
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,18 +11,16 @@ permissions:
 jobs:
   update-aur:
     runs-on: ubuntu-latest
-    container: archlinux:base-devel # Use Arch Linux container for makepkg tools
+    container: archlinux:base-devel
 
     steps:
       - name: Install dependencies
         run: |
-          # Added qt6-declarative to the list below
           pacman -Syu --noconfirm git openssh pacman-contrib cmake qt6-tools qt6-base qt6-svg qt6-declarative libarchive curl hicolor-icon-theme sudo
-          
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-      - name: Checkout downstream repo (Your Repo)
+      - name: Checkout downstream repo
         uses: actions/checkout@v4
         with:
           path: repo
@@ -31,19 +29,14 @@ jobs:
       - name: Check for new upstream version
         id: check_ver
         run: |
-          # Get latest release tag from upstream
           LATEST_TAG=$(curl -s https://api.github.com/repos/raspberrypi/rpi-imager/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
-          # Remove 'v' prefix if present (e.g., v1.8.5 -> 1.8.5)
           VERSION=${LATEST_TAG#v}
-          
           echo "Latest upstream: $VERSION"
           
-          # Read current version from PKGBUILD
           CURRENT_VER=$(grep "^pkgver=" repo/PKGBUILD | cut -d= -f2)
           echo "Current local: $CURRENT_VER"
           
           if [ "$VERSION" != "$CURRENT_VER" ]; then
-            echo "New version detected!"
             echo "new_version=$VERSION" >> $GITHUB_OUTPUT
             echo "update_needed=true" >> $GITHUB_OUTPUT
           else
@@ -57,64 +50,61 @@ jobs:
           cd repo
           NEW_VER=${{ steps.check_ver.outputs.new_version }}
           
-          # Update pkgver
           sed -i "s/^pkgver=.*/pkgver=$NEW_VER/" PKGBUILD
-          # Reset pkgrel to 1
           sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
           
-          # Fix permissions for builder user
           chown -R builder:builder .
-          
-          # Update checksums (run as builder)
           sudo -u builder updpkgsums
-          
-          # Generate .SRCINFO (run as builder)
           sudo -u builder makepkg --printsrcinfo > .SRCINFO
 
       - name: Test Build
         if: steps.check_ver.outputs.update_needed == 'true'
         run: |
           cd repo
-          # Run makepkg to ensure it builds correctly before pushing
           sudo -u builder makepkg -si --noconfirm
 
-      - name: Setup SSH
+      - name: Push to GitHub
         if: steps.check_ver.outputs.update_needed == 'true'
         run: |
+          cd repo
+          git config --global --add safe.directory '*'
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          
+          git add PKGBUILD .SRCINFO
+          git commit -m "auto-update: bump version to ${{ steps.check_ver.outputs.new_version }}" || echo "Nothing to commit"
+          git push origin HEAD:master
+
+      - name: Push to AUR
+        if: steps.check_ver.outputs.update_needed == 'true'
+        run: |
+          # 1. Setup SSH
           mkdir -p ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          
-          # Add AUR host key to known_hosts to avoid prompts
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-          
-          # Configure Git user
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
-
-      - name: Push to AUR and GitHub
-        if: steps.check_ver.outputs.update_needed == 'true'
-        run: |
-          # FIX 1: Mark directory safe
-          git config --global --add safe.directory '*'
-
-          cd repo
-          
-          # Commit changes locally
-          git add PKGBUILD .SRCINFO
-          git commit -m "auto-update: bump version to ${{ steps.check_ver.outputs.new_version }}"
-          
-          # Push to GitHub (origin)
-          git push origin HEAD:master
-          
-          # Add AUR remote
-          git remote add aur ssh://aur@aur.archlinux.org/rpi-imager-latest.git
-          
-          # FIX 2: Create .ssh directory and add AUR key explicitly
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
           ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
 
-          # FIX 3: Push to AUR with relaxed checking (Backup for Fix 2)
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" git push aur HEAD:master
+          # 2. Clone AUR repo to a generic 'aur-repo' folder
+          # We use a temporary directory so we don't accidentally copy the .github folder
+          git clone ssh://aur@aur.archlinux.org/rpi-imager-latest.git aur-repo
+          
+          # 3. Copy ONLY the safe files from GitHub workspace to AUR repo
+          cp repo/PKGBUILD aur-repo/
+          cp repo/.SRCINFO aur-repo/
+          # Optional: Copy LICENSE or other files if you want them on AUR
+          # cp repo/LICENSE aur-repo/ 
+          
+          # 4. Commit and Push from the AUR directory
+          cd aur-repo
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          
+          git add PKGBUILD .SRCINFO
+          
+          # Only commit if something changed
+          if ! git diff --cached --quiet; then
+            git commit -m "Update to ${{ steps.check_ver.outputs.new_version }}"
+            git push origin master
+          else
+            echo "No changes detected for AUR push"
+          fi
