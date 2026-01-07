@@ -8,6 +8,7 @@ license=(Apache)
 depends=(
   qt6-base
   qt6-svg
+  qt6-declarative
   qt6-tools
   libarchive
   curl
