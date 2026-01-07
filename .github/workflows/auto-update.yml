@@ -2,8 +2,14 @@ name: Auto-Update AUR Package
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * *' # Runs daily
   workflow_dispatch:
+    inputs:
+      skip_test:
+        description: 'Skip Test Build'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -58,7 +64,8 @@ jobs:
           sudo -u builder makepkg --printsrcinfo > .SRCINFO
 
       - name: Test Build
-        if: steps.check_ver.outputs.update_needed == 'true'
+        # Runs if update needed AND (skip_test is NOT checked)
+        if: steps.check_ver.outputs.update_needed == 'true' && inputs.skip_test != true
         run: |
           cd repo
           sudo -u builder makepkg -si --noconfirm
@@ -68,41 +75,39 @@ jobs:
         run: |
           cd repo
           git config --global --add safe.directory '*'
-          # You can change these to your real info if you want attribution
           git config user.name "Ashen Chathuranga"
           git config user.email "ktauchathuhranga@gmail.com"
           
           git add PKGBUILD .SRCINFO
           git commit -m "auto-update: bump version to ${{ steps.check_ver.outputs.new_version }}" || echo "Nothing to commit"
           git push origin HEAD:master
-          
-      - name: Push to AUR (No Clone Method)
+
+      - name: Push to AUR
         if: steps.check_ver.outputs.update_needed == 'true'
         run: |
-          # 1. Setup SSH Keys
+          # 1. Setup SSH Key
           mkdir -p ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           
-          # 2. Configure Git for AUR
-          # We enter the 'repo' directory where the updated PKGBUILD is
-          cd repo
+          # 2. Clone AUR Repo (Must clone to avoid non-fast-forward error)
+          # We use a temp folder 'aur-repo' to keep it separate from our GitHub files
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" git clone ssh://aur@aur.archlinux.org/rpi-imager-latest.git aur-repo
           
-          # 3. initialize a temporary git repo for AUR inside this folder
-          # This allows us to curate exactly what we send
-          rm -rf .git  # Remove the GitHub git history to start fresh for AUR
-          git init -b master
+          # 3. Copy Updated Files
+          cp repo/PKGBUILD aur-repo/
+          cp repo/.SRCINFO aur-repo/
+          
+          # 4. Commit and Push
+          cd aur-repo
           git config user.name "Ashen Chathuranga"
           git config user.email "ktauchathuhranga@gmail.com"
           
-          # 4. Add ONLY the files AUR allows
           git add PKGBUILD .SRCINFO
           
-          # 5. Commit
-          git commit -m "Update to ${{ steps.check_ver.outputs.new_version }}"
-          
-          # 6. Add Remote and Force Push
-          # We use +master to force overwrite the remote history with this clean commit
-          git remote add aur ssh://aur@aur.archlinux.org/rpi-imager-latest.git
-          
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" git push --force aur master
+          if ! git diff --cached --quiet; then
+            git commit -m "Update to ${{ steps.check_ver.outputs.new_version }}"
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" git push origin master
+          else
+            echo "No changes detected for AUR."
+          fi
