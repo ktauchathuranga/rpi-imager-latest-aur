@@ -92,6 +92,9 @@ jobs:
       - name: Push to AUR and GitHub
         if: steps.check_ver.outputs.update_needed == 'true'
         run: |
+          # FIX: Mark the directory as safe to ignore ownership mismatch
+          git config --global --add safe.directory '*'
+          
           cd repo
           
           # Commit changes locally
