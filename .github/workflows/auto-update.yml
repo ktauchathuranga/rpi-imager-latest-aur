@@ -68,43 +68,41 @@ jobs:
         run: |
           cd repo
           git config --global --add safe.directory '*'
-          git config user.name "GitHub Action"
-          git config user.email "action@github.com"
+          # You can change these to your real info if you want attribution
+          git config user.name "Ashen Chathuranga"
+          git config user.email "ktauchathuhranga@gmail.com"
           
           git add PKGBUILD .SRCINFO
           git commit -m "auto-update: bump version to ${{ steps.check_ver.outputs.new_version }}" || echo "Nothing to commit"
           git push origin HEAD:master
-
-      - name: Push to AUR
+          
+      - name: Push to AUR (No Clone Method)
         if: steps.check_ver.outputs.update_needed == 'true'
         run: |
-          # 1. Setup SSH
+          # 1. Setup SSH Keys
           mkdir -p ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
-
-          # 2. Clone AUR repo to a generic 'aur-repo' folder
-          # We use a temporary directory so we don't accidentally copy the .github folder
-          git clone ssh://aur@aur.archlinux.org/rpi-imager-latest.git aur-repo
           
-          # 3. Copy ONLY the safe files from GitHub workspace to AUR repo
-          cp repo/PKGBUILD aur-repo/
-          cp repo/.SRCINFO aur-repo/
-          # Optional: Copy LICENSE or other files if you want them on AUR
-          # cp repo/LICENSE aur-repo/ 
+          # 2. Configure Git for AUR
+          # We enter the 'repo' directory where the updated PKGBUILD is
+          cd repo
           
-          # 4. Commit and Push from the AUR directory
-          cd aur-repo
-          git config user.name "GitHub Action"
-          git config user.email "action@github.com"
+          # 3. initialize a temporary git repo for AUR inside this folder
+          # This allows us to curate exactly what we send
+          rm -rf .git  # Remove the GitHub git history to start fresh for AUR
+          git init -b master
+          git config user.name "Ashen Chathuranga"
+          git config user.email "ktauchathuhranga@gmail.com"
           
+          # 4. Add ONLY the files AUR allows
           git add PKGBUILD .SRCINFO
           
-          # Only commit if something changed
-          if ! git diff --cached --quiet; then
-            git commit -m "Update to ${{ steps.check_ver.outputs.new_version }}"
-            git push origin master
-          else
-            echo "No changes detected for AUR push"
-          fi
+          # 5. Commit
+          git commit -m "Update to ${{ steps.check_ver.outputs.new_version }}"
+          
+          # 6. Add Remote and Force Push
+          # We use +master to force overwrite the remote history with this clean commit
+          git remote add aur ssh://aur@aur.archlinux.org/rpi-imager-latest.git
+          
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" git push --force aur master
