@@ -1,6 +1,6 @@
 pkgname=rpi-imager-latest
-pkgver=2.0.2
-pkgrel=2
+pkgver=2.0.3
+pkgrel=1
 pkgdesc="Raspberry Pi Imager – flash images to SD cards and USB drives"
 arch=(x86_64 aarch64)
 url="https://www.raspberrypi.com/software/"
