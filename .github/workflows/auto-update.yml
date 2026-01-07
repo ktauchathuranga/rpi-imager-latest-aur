@@ -117,4 +117,4 @@ jobs:
           chmod 644 ~/.ssh/known_hosts
 
           # FIX 3: Push to AUR with relaxed checking (Backup for Fix 2)
-          GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" git push aur HEAD:master
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no" git push aur HEAD:master
